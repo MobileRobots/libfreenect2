@@ -23,46 +23,23 @@
  * Binary distributions must follow the binary distribution requirements of
  * either License.
  */
+ 
+ 
+#ifndef DATA_CALLBACK_H_
+#define DATA_CALLBACK_H_
 
-#include <libfreenect2/rgb_packet_processor.h>
-#include <libfreenect2/async_packet_processor.h>
-
-#include <fstream>
-#include <string>
+#include <stddef.h>
+#include <libfreenect2/config.h>
 
 namespace libfreenect2
 {
 
-RgbPacketProcessor::RgbPacketProcessor() :
-    listener_(0)
+class LIBFREENECT2_API DataCallback
 {
-}
+public:
+  virtual void onDataReceived(unsigned char *buffer, size_t n) = 0;
+};
 
-RgbPacketProcessor::~RgbPacketProcessor()
-{
-}
+} // namespace libfreenect2
 
-void RgbPacketProcessor::setFrameListener(libfreenect2::FrameListener *listener)
-{
-  listener_ = listener;
-}
-
-DumpRgbPacketProcessor::DumpRgbPacketProcessor()
-{
-}
-
-DumpRgbPacketProcessor::~DumpRgbPacketProcessor()
-{
-}
-
-void DumpRgbPacketProcessor::process(const RgbPacket &packet)
-{
-  //std::stringstream name;
-  //name << packet->sequence << "_" << packet->unknown0 << "_" << jpeg_buffer_length << ".jpeg";
-  //
-  //std::ofstream file(name.str().c_str());
-  //file.write(reinterpret_cast<char *>(packet->jpeg_buffer), jpeg_buffer_length);
-  //file.close();
-}
-
-} /* namespace libfreenect2 */
+#endif // DATA_CALLBACK_H_

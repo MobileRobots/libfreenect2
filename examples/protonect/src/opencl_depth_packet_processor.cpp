@@ -33,11 +33,16 @@
 #include <fstream>
 #include <sstream>
 
+#if defined(WIN32)
+#define _USE_MATH_DEFINES
+#include <math.h>
+#endif
+
 #define __CL_ENABLE_EXCEPTIONS
 #ifdef __APPLE__
-  #include <OpenCL/cl.hpp>
+#include <OpenCL/cl.hpp>
 #else
-  #include <CL/cl.hpp>
+#include <CL/cl.hpp>
 #endif
 
 #ifndef REG_OPENCL_FILE
@@ -99,8 +104,6 @@ public:
 
   double timing_current_start;
 
-  bool enable_bilateral_filter, enable_edge_filter;
-
   Frame *ir_frame, *depth_frame;
 
   cl::Context context;
@@ -152,9 +155,11 @@ public:
   cl::Buffer buf_ir_sum;
   cl::Buffer buf_filtered;
 
-  bool isInitialized;
+  bool deviceInitialized;
+  bool programInitialized;
+  std::string sourceCode;
 
-  OpenCLDepthPacketProcessorImpl() : isInitialized(false)
+  OpenCLDepthPacketProcessorImpl(const int deviceId = -1) : deviceInitialized(false), programInitialized(false)
   {
     newIrFrame();
     newDepthFrame();
@@ -164,8 +169,7 @@ public:
     timing_current_start = 0.0;
     image_size = 512 * 424;
 
-    enable_bilateral_filter = true;
-    enable_edge_filter = true;
+    deviceInitialized = initDevice(deviceId);
   }
 
   void generateOptions(std::string &options) const
@@ -216,59 +220,91 @@ public:
     oss << " -D EDGE_AVG_DELTA_THRESHOLD=" << params.edge_avg_delta_threshold << "f";
     oss << " -D MAX_EDGE_COUNT=" << params.max_edge_count << "f";
 
-    oss << " -D MIN_DEPTH=" << params.min_depth << "f";
-    oss << " -D MAX_DEPTH=" << params.max_depth << "f";
+    oss << " -D MIN_DEPTH=" << config.MinDepth * 1000.0f << "f";
+    oss << " -D MAX_DEPTH=" << config.MaxDepth * 1000.0f << "f";
     options = oss.str();
   }
 
-  bool selectDevice(const std::vector<cl::Platform> &platforms, const int type)
+  void getDevices(const std::vector<cl::Platform> &platforms, std::vector<cl::Device> &devices)
   {
-    bool selected = false;
-
+    devices.clear();
     for(size_t i = 0; i < platforms.size(); ++i)
     {
       const cl::Platform &platform = platforms[i];
-      std::string platformName, platformVendor;
-      platform.getInfo(CL_PLATFORM_NAME, &platformName);
-      platform.getInfo(CL_PLATFORM_VENDOR, &platformVendor);
 
-      std::cout << OUT_NAME("selectDevice") "found platform: " << platformName << " vendor: " << platformVendor << std::endl;
-
-      std::vector<cl::Device> devices;
-      if(platform.getDevices(type, &devices) != CL_SUCCESS)
+      std::vector<cl::Device> devs;
+      if(platform.getDevices(CL_DEVICE_TYPE_ALL, &devs) != CL_SUCCESS)
       {
-        std::cerr << OUT_NAME("selectDevice") "error while getting opencl devices." << std::endl;
-        return false;
+        continue;
       }
 
-      for(size_t j = 0; j < devices.size(); ++j)
-      {
-        cl::Device &dev = devices[i];
-        std::string devName, devVendor;
-        dev.getInfo(CL_DEVICE_NAME, &devName);
-        dev.getInfo(CL_DEVICE_VENDOR, &devVendor);
-
-        std::cout << OUT_NAME("selectDevice") "found device: " << devName << " vendor: " << devVendor << std::endl;
-
-        if(!selected)
-        {
-          selected = true;
-          device = dev;
-        }
-      }
+      devices.insert(devices.end(), devs.begin(), devs.end());
     }
-
-    return selected;
   }
 
-  bool init()
+  void listDevice(std::vector<cl::Device> &devices)
   {
-    if(isInitialized)
+    std::cout << OUT_NAME("listDevice") " devices:" << std::endl;
+    for(size_t i = 0; i < devices.size(); ++i)
     {
+      cl::Device &dev = devices[i];
+      std::string devName, devVendor, devType;
+      size_t devTypeID;
+      dev.getInfo(CL_DEVICE_NAME, &devName);
+      dev.getInfo(CL_DEVICE_VENDOR, &devVendor);
+      dev.getInfo(CL_DEVICE_TYPE, &devTypeID);
+
+      switch(devTypeID)
+      {
+      case CL_DEVICE_TYPE_CPU:
+        devType = "CPU";
+        break;
+      case CL_DEVICE_TYPE_GPU:
+        devType = "GPU";
+        break;
+      case CL_DEVICE_TYPE_ACCELERATOR:
+        devType = "ACCELERATOR";
+        break;
+      case CL_DEVICE_TYPE_CUSTOM:
+        devType = "CUSTOM";
+        break;
+      default:
+        devType = "UNKNOWN";
+      }
+
+      std::cout << "  " << i << ": " << devName << " (" << devType << ")[" << devVendor << ']' << std::endl;
+    }
+  }
+
+  bool selectDevice(std::vector<cl::Device> &devices, const int deviceId)
+  {
+    if(deviceId != -1 && devices.size() > (size_t)deviceId)
+    {
+      device = devices[deviceId];
       return true;
     }
 
-    std::string sourceCode;
+    bool selected = false;
+    size_t selectedType = 0;
+
+    for(size_t i = 0; i < devices.size(); ++i)
+    {
+      cl::Device &dev = devices[i];
+      size_t devTypeID;
+      dev.getInfo(CL_DEVICE_TYPE, &devTypeID);
+
+      if(!selected || (selectedType != CL_DEVICE_TYPE_GPU && devTypeID == CL_DEVICE_TYPE_GPU))
+      {
+        selectedType = devTypeID;
+        selected = true;
+        device = dev;
+      }
+    }
+    return selected;
+  }
+
+  bool initDevice(const int deviceId)
+  {
     if(!readProgram(sourceCode))
     {
       return false;
@@ -289,18 +325,62 @@ public:
         return false;
       }
 
-      if(!selectDevice(platforms, CL_DEVICE_TYPE_GPU))
+      std::vector<cl::Device> devices;
+      getDevices(platforms, devices);
+      listDevice(devices);
+      if(selectDevice(devices, deviceId))
       {
-        std::cout << OUT_NAME("init") "could not find any GPU device. trying CPU devices" << std::endl;
+        std::string devName, devVendor, devType;
+        size_t devTypeID;
+        device.getInfo(CL_DEVICE_NAME, &devName);
+        device.getInfo(CL_DEVICE_VENDOR, &devVendor);
+        device.getInfo(CL_DEVICE_TYPE, &devTypeID);
 
-        if(!selectDevice(platforms, CL_DEVICE_TYPE_CPU))
+        switch(devTypeID)
         {
-          std::cerr << OUT_NAME("init") "could not find any suitable device" << std::endl;
-          return false;
+        case CL_DEVICE_TYPE_CPU:
+          devType = "CPU";
+          break;
+        case CL_DEVICE_TYPE_GPU:
+          devType = "GPU";
+          break;
+        case CL_DEVICE_TYPE_ACCELERATOR:
+          devType = "ACCELERATOR";
+          break;
+        case CL_DEVICE_TYPE_CUSTOM:
+          devType = "CUSTOM";
+          break;
+        default:
+          devType = "UNKNOWN";
         }
+        std::cout << OUT_NAME("init") " selected device: " << devName << " (" << devType << ")[" << devVendor << ']' << std::endl;
       }
-      context = cl::Context(device);
+      else
+      {
+        std::cerr << OUT_NAME("init") "could not find any suitable device" << std::endl;
+        return false;
+      }
 
+      context = cl::Context(device);
+    }
+    catch(const cl::Error &err)
+    {
+      std::cerr << OUT_NAME("init") "ERROR: " << err.what() << "(" << err.err() << ")" << std::endl;
+      throw err;
+    }
+    return true;
+  }
+
+  bool initProgram()
+  {
+    if(!deviceInitialized)
+    {
+      return false;
+    }
+
+    cl_int err = CL_SUCCESS;
+    try
+    {
       std::string options;
       generateOptions(options);
 
@@ -401,9 +481,8 @@ public:
       }
 
       throw err;
-      return false;
     }
-    isInitialized = true;
+    programInitialized = true;
     return true;
   }
 
@@ -439,7 +518,7 @@ public:
         eventFPS2[0] = eventPPS2[0];
       }
 
-      queue.enqueueReadBuffer(enable_edge_filter ? buf_filtered : buf_depth, CL_FALSE, 0, buf_depth_size, depth_frame->data, &eventFPS2, &event1);
+      queue.enqueueReadBuffer(config.EnableEdgeAwareFilter ? buf_filtered : buf_depth, CL_FALSE, 0, buf_depth_size, depth_frame->data, &eventFPS2, &event1);
       event0.wait();
       event1.wait();
     }
@@ -453,7 +532,7 @@ public:
 
   bool readProgram(std::string &source) const
   {
-    source = loadCLSource(REG_OPENCL_FILE);
+    source = loadCLSource("src/opencl_depth_packet_processor.cl");
     return !source.empty();
   }
 
@@ -505,8 +584,8 @@ public:
   }
 };
 
-OpenCLDepthPacketProcessor::OpenCLDepthPacketProcessor() :
-  impl_(new OpenCLDepthPacketProcessorImpl())
+OpenCLDepthPacketProcessor::OpenCLDepthPacketProcessor(const int deviceId) :
+  impl_(new OpenCLDepthPacketProcessorImpl(deviceId))
 {
 }
 
@@ -519,9 +598,7 @@ void OpenCLDepthPacketProcessor::setConfiguration(const libfreenect2::DepthPacke
 {
   DepthPacketProcessor::setConfiguration(config);
   impl_->config = config;
-
-  impl_->enable_bilateral_filter = config.EnableBilateralFilter;
-  impl_->enable_edge_filter = config.EnableEdgeAwareFilter;
+  impl_->programInitialized = false;
 }
 
 void OpenCLDepthPacketProcessor::loadP0TablesFromCommandResponse(unsigned char *buffer, size_t buffer_length)
@@ -535,7 +612,6 @@ void OpenCLDepthPacketProcessor::loadP0TablesFromCommandResponse(unsigned char *
   }
 
   impl_->fill_trig_table(p0table);
-  impl_->init();
 }
 
 void OpenCLDepthPacketProcessor::loadXTableFromFile(const char *filename)
@@ -566,7 +642,7 @@ void OpenCLDepthPacketProcessor::process(const DepthPacket &packet)
 {
   bool has_listener = this->listener_ != 0;
 
-  if(!impl_->init())
+  if(!impl_->programInitialized && !impl_->initProgram())
   {
     std::cerr << OUT_NAME("process") "could not initialize OpenCLDepthPacketProcessor" << std::endl;
     return;
