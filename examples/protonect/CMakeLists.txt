@@ -3,6 +3,8 @@ CMAKE_MINIMUM_REQUIRED(VERSION 2.6)
 PROJECT(libfreenect2)
 SET(CMAKE_BUILD_TYPE RelWithDebInfo)
 
+SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse2 -msse3 -msse4.1")
+
 SET(MY_DIR ${libfreenect2_SOURCE_DIR})
 
 OPTION(ENABLE_CXX11 "Enable C++11 support" ON)
