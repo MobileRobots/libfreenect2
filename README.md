@@ -106,11 +106,13 @@ cd libfreenect2/depends
 sh install_ubuntu.sh
 ```
 
-1. Fix libturbojpeg if needed:
+1. Fix libturbojpeg if needed on amd64 architecture:
 
     ```
 sudo ln -s /usr/lib/x86_64-linux-gnu/libturbojpeg.so.0.0.0 /usr/lib/x86_64-linux-gnu/libturbojpeg.so
 ```
+
+(See https://bugs.launchpad.net/ubuntu/+source/libjpeg-turbo/+bug/1369067 for bug report.)
 
 1. Build the actual protonect executable
 
