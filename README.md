@@ -106,6 +106,8 @@ cd libfreenect2/depends
 sh install_ubuntu.sh
 ```
 
+1. Install a recent version of Beignet from source if you want to use OpenCL.  [http://www.freedesktop.org/wiki/Software/Beignet]
+
 1. Fix libturbojpeg if needed on amd64 architecture:
 
     ```
@@ -127,6 +129,9 @@ make && sudo make install
     ```
 ./bin/Protonect
 ```
+
+To choose packet processor implementation, specify on command line (added in
+MobileRobots fork).   Run `./bin/Protonect --help` for list of options. 
 
 ### Other operating systems
 

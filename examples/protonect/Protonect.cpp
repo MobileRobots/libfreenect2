@@ -36,6 +36,8 @@
 #include <libfreenect2/frame_listener_impl.h>
 #include <libfreenect2/threading.h>
 
+#include <libfreenect2/packet_pipeline.h>
+
 bool protonect_shutdown = false;
 
 void sigint_handler(int s)
@@ -58,7 +60,38 @@ int main(int argc, char *argv[])
   glfwInit();
 
   libfreenect2::Freenect2 freenect2;
-  libfreenect2::Freenect2Device *dev = freenect2.openDefaultDevice();
+//  libfreenect2::Freenect2Device *dev = freenect2.openDefaultDevice();
+  libfreenect2::Freenect2Device *dev = 0;
+  for(int i = 1; i < argc; ++i)
+  {
+#ifdef LIBFREENECT2_WITH_OPENCL_SUPPORT
+    if(strcmp(argv[i], "--opencl") == 0)
+      dev = freenect2.openDefaultDevice(new libfreenect2::OpenCLPacketPipeline());
+    else 
+#endif
+    if(strcmp(argv[i], "--opengl") == 0)
+      dev = freenect2.openDefaultDevice(new libfreenect2::OpenGLPacketPipeline());
+    else 
+    if(strcmp(argv[i], "--cpu") == 0)
+      dev = freenect2.openDefaultDevice(new libfreenect2::CpuPacketPipeline());
+    else
+    {
+      std::cout << "Usage: Protonect [option]" << std::endl
+        << "Packet processor type may be selected with these options:" << std::endl
+        << "\t--opengl\tUse OpenGL to process depth packets" << std::endl
+        << "\t--cpu\tUse CPU to process depth packets (slower)" << std::endl
+#ifdef LIBFREENECT2_WITH_OPENCL_SUPPORT
+        << "\t--opencl\tUse OpenCL to process depth packets" << std::endl
+#else
+        << std::endl << "This Protonect was not compiled with OpenCL support, so OpenCL depth processor is not available." << std::endl
+#endif
+        << "Default is OpenGL processor." << std::endl;
+      exit(1);
+    }
+  }
+  if(dev == 0)
+    dev = freenect2.openDefaultDevice();
+      
 
   if(dev == 0)
   {
