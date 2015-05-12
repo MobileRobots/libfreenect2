@@ -319,7 +319,7 @@ public:
     for(size_t i = 0; i < devices.size(); ++i)
     {
       cl::Device &dev = devices[i];
-      size_t devTypeID = getDeviceType();
+      size_t devTypeID = getDeviceType(dev);
 
       if(!selected || (selectedType != CL_DEVICE_TYPE_GPU && devTypeID == CL_DEVICE_TYPE_GPU))
       {
