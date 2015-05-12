@@ -23,6 +23,8 @@ IF(ENABLE_CXX11)
   ENDIF()
 ENDIF(ENABLE_CXX11)
 
+SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse2 -msse3 -msse4.1 -msse4.2")
+
 # additional cmake modules
 LIST(APPEND CMAKE_MODULE_PATH ${MY_DIR}/cmake_modules)
 
