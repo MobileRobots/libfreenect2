@@ -242,17 +242,35 @@ public:
     }
   }
 
-  void listDevice(std::vector<cl::Device> &devices)
+  size_t getDeviceType(const cl::Device& dev) 
   {
-    std::cout << OUT_NAME("listDevice") " devices:" << std::endl;
-    for(size_t i = 0; i < devices.size(); ++i)
-    {
-      cl::Device &dev = devices[i];
-      std::string devName, devVendor, devType;
       size_t devTypeID;
-      dev.getInfo(CL_DEVICE_NAME, &devName);
-      dev.getInfo(CL_DEVICE_VENDOR, &devVendor);
-      dev.getInfo(CL_DEVICE_TYPE, &devTypeID);
+      try {
+        dev.getInfo(CL_DEVICE_TYPE, &devTypeID);
+      } catch(cl::Error&) {
+        std::cerr << OUT_NAME("getDeviceInfo") "warning: error getting device type. Assuming GPU." << std::endl;
+        devTypeID = CL_DEVICE_TYPE_GPU;
+      }
+      return devTypeID;
+  }
+
+  void getDeviceInfo(const cl::Device& dev, std::string& devName, std::string& devVendor, size_t& devTypeID, std::string& devType)
+  {
+      try {
+        dev.getInfo(CL_DEVICE_NAME, &devName);
+      } catch(cl::Error&) {
+        std::cerr << OUT_NAME("getDeviceInfo") "warning: error getting device name." << std::endl;
+        devName = "UNKNOWN";
+      }
+
+      try {
+        dev.getInfo(CL_DEVICE_VENDOR, &devVendor);
+      } catch(cl::Error&) {
+        std::cerr << OUT_NAME("getDeviceInfo") "warning: error getting device vendor name." << std::endl;
+        devVendor = "UNKNOWN";
+      }
+
+      devTypeID = getDeviceType(dev);
 
       switch(devTypeID)
       {
@@ -271,7 +289,18 @@ public:
       default:
         devType = "UNKNOWN";
       }
+  }
+    
 
+  void listDevice(std::vector<cl::Device> &devices)
+  {
+    std::cout << OUT_NAME("listDevice") " devices:" << std::endl;
+    for(size_t i = 0; i < devices.size(); ++i)
+    {
+      cl::Device &dev = devices[i];
+      std::string devName, devVendor, devType;
+      size_t devTypeID;
+      getDeviceInfo(dev, devName, devVendor, devTypeID, devType);
       std::cout << "  " << i << ": " << devName << " (" << devType << ")[" << devVendor << ']' << std::endl;
     }
   }
@@ -290,8 +319,7 @@ public:
     for(size_t i = 0; i < devices.size(); ++i)
     {
       cl::Device &dev = devices[i];
-      size_t devTypeID;
-      dev.getInfo(CL_DEVICE_TYPE, &devTypeID);
+      size_t devTypeID = getDeviceType();
 
       if(!selected || (selectedType != CL_DEVICE_TYPE_GPU && devTypeID == CL_DEVICE_TYPE_GPU))
       {
@@ -332,27 +360,7 @@ public:
       {
         std::string devName, devVendor, devType;
         size_t devTypeID;
-        device.getInfo(CL_DEVICE_NAME, &devName);
-        device.getInfo(CL_DEVICE_VENDOR, &devVendor);
-        device.getInfo(CL_DEVICE_TYPE, &devTypeID);
-
-        switch(devTypeID)
-        {
-        case CL_DEVICE_TYPE_CPU:
-          devType = "CPU";
-          break;
-        case CL_DEVICE_TYPE_GPU:
-          devType = "GPU";
-          break;
-        case CL_DEVICE_TYPE_ACCELERATOR:
-          devType = "ACCELERATOR";
-          break;
-        case CL_DEVICE_TYPE_CUSTOM:
-          devType = "CUSTOM";
-          break;
-        default:
-          devType = "UNKNOWN";
-        }
+        getDeviceInfo(device, devName, devVendor, devTypeID, devType);
         std::cout << OUT_NAME("init") " selected device: " << devName << " (" << devType << ")[" << devVendor << ']' << std::endl;
       }
       else
